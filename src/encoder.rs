@@ -1,4 +1,3 @@
-use async_std::sync;
 use std::io;
 use std::time::Duration;
 
@@ -6,14 +5,15 @@ use async_std::io::Read as AsyncRead;
 use async_std::prelude::*;
 use async_std::task::{ready, Context, Poll};
 use std::pin::Pin;
+use broadcaster::BroadcastChannel;
 
 pin_project_lite::pin_project! {
     /// An SSE protocol encoder.
-    #[derive(Debug)]
+    #[derive(Debug, Clone)]
     pub struct Encoder {
         buf: Option<Vec<u8>>,
         #[pin]
-        receiver: sync::Receiver<Vec<u8>>,
+        receiver: BroadcastChannel<Vec<u8>>,
         cursor: usize,
     }
 }
@@ -80,17 +80,17 @@ impl AsyncRead for Encoder {
 
 /// The sending side of the encoder.
 #[derive(Debug)]
-pub struct Sender(sync::Sender<Vec<u8>>);
+pub struct Sender(BroadcastChannel<Vec<u8>>);
 
 /// Create a new SSE encoder.
 pub fn encode() -> (Sender, Encoder) {
-    let (sender, receiver) = sync::channel(1);
+    let chan = BroadcastChannel::new();
     let encoder = Encoder {
-        receiver,
+        receiver: chan.clone(),
         buf: None,
         cursor: 0,
     };
-    (Sender(sender), encoder)
+    (Sender(chan), encoder)
 }
 
 impl Sender {
@@ -98,31 +98,31 @@ impl Sender {
     pub async fn send(&self, name: &str, data: &[u8], id: Option<&str>) {
         // Write the event name
         let msg = format!("event:{}\n", name);
-        self.0.send(msg.into_bytes()).await;
+        self.0.send(&msg.into_bytes()).await.unwrap();
 
         // Write the id
         if let Some(id) = id {
-            self.0.send(format!("id:{}\n", id).into_bytes()).await;
+            self.0.send(&format!("id:{}\n", id).into_bytes()).await.unwrap();
         }
 
         // Write the data section, and end.
         let mut msg = b"data:".to_vec();
         msg.extend_from_slice(data);
         msg.extend_from_slice(b"\n\n");
-        self.0.send(msg).await;
+        self.0.send(&msg).await.unwrap();
     }
 
     /// Send a new "retry" message over SSE.
     pub async fn send_retry(&self, dur: Duration, id: Option<&str>) {
         // Write the id
         if let Some(id) = id {
-            self.0.send(format!("id:{}\n", id).into_bytes()).await;
+            self.0.send(&format!("id:{}\n", id).into_bytes()).await.unwrap();
         }
 
         // Write the retry section, and end.
         let dur = dur.as_secs_f64() as u64;
         let msg = format!("retry:{}\n\n", dur);
-        self.0.send(msg.into_bytes()).await;
+        self.0.send(&msg.into_bytes()).await.unwrap();
     }
 }
 
