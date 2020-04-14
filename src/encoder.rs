@@ -95,34 +95,36 @@ pub fn encode() -> (Sender, Encoder) {
 
 impl Sender {
     /// Send a new message over SSE.
-    pub async fn send(&self, name: &str, data: &[u8], id: Option<&str>) {
+    pub async fn send(&self, name: &str, data: &[u8], id: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
         // Write the event name
         let msg = format!("event:{}\n", name);
-        self.0.send(&msg.into_bytes()).await.unwrap();
+        self.0.send(&msg.into_bytes()).await?;
 
         // Write the id
         if let Some(id) = id {
-            self.0.send(&format!("id:{}\n", id).into_bytes()).await.unwrap();
+            self.0.send(&format!("id:{}\n", id).into_bytes()).await?;
         }
 
         // Write the data section, and end.
         let mut msg = b"data:".to_vec();
         msg.extend_from_slice(data);
         msg.extend_from_slice(b"\n\n");
-        self.0.send(&msg).await.unwrap();
+        self.0.send(&msg).await?;
+        Ok(())
     }
 
     /// Send a new "retry" message over SSE.
-    pub async fn send_retry(&self, dur: Duration, id: Option<&str>) {
+    pub async fn send_retry(&self, dur: Duration, id: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
         // Write the id
         if let Some(id) = id {
-            self.0.send(&format!("id:{}\n", id).into_bytes()).await.unwrap();
+            self.0.send(&format!("id:{}\n", id).into_bytes()).await?;
         }
 
         // Write the retry section, and end.
         let dur = dur.as_secs_f64() as u64;
         let msg = format!("retry:{}\n\n", dur);
-        self.0.send(&msg.into_bytes()).await.unwrap();
+        self.0.send(&msg.into_bytes()).await?;
+        Ok(())
     }
 }
 
